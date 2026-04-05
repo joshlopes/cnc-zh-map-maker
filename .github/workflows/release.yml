@@ -71,7 +71,7 @@ jobs:
       - name: Build Windows exe
         run: |
           mkdir -p dist
-          DOCKER_BUILDKIT=1 docker build --platform linux/amd64 --output dist/ .
+          DOCKER_BUILDKIT=1 docker build --output dist/ .
           ls -lh dist/
 
       - name: Upload exe artifact

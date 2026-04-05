@@ -1,4 +1,4 @@
-FROM --platform=linux/amd64 tobix/pywine:3.12
+FROM tobix/pywine:3.12
 
 ENV WINEDEBUG=-all
 ENV PYTHON="wine /opt/wineprefix/drive_c/Python/python.exe"

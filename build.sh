@@ -7,7 +7,12 @@ set -euo pipefail
 echo "Building ZH-Map-Maker.exe via Docker..."
 
 # Build and extract the exe
-DOCKER_BUILDKIT=1 docker build --output dist/ .
+# Use --platform flag on non-amd64 hosts (e.g. Apple Silicon)
+PLATFORM_FLAG=""
+if [ "$(uname -m)" != "x86_64" ]; then
+    PLATFORM_FLAG="--platform linux/amd64"
+fi
+DOCKER_BUILDKIT=1 docker build $PLATFORM_FLAG --output dist/ .
 
 if [ -f dist/ZH-Map-Maker.exe ]; then
     echo ""
