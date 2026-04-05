@@ -71,8 +71,11 @@ jobs:
       - name: Build Windows exe
         run: |
           mkdir -p dist
-          DOCKER_BUILDKIT=1 docker build --output dist/ .
-          ls -lh dist/
+          docker build -t zh-map-builder .
+          docker create --name zh-extract zh-map-builder true
+          docker cp zh-extract:/app/dist/ZH-Map-Maker.exe dist/ZH-Map-Maker.exe
+          docker rm zh-extract
+          ls -lh dist/ZH-Map-Maker.exe
 
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4

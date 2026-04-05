@@ -110,6 +110,5 @@ SPEC
 # Build the exe
 RUN $PYTHON -m PyInstaller --noconfirm --log-level WARN zh_map_maker.spec
 
-# Output stage - extract just the exe
-FROM scratch AS export
-COPY --from=0 /app/dist/ZH-Map-Maker.exe /ZH-Map-Maker.exe
+# The exe is at /app/dist/ZH-Map-Maker.exe
+# Extract with: docker cp $(docker create --name tmp IMG true):/app/dist/ZH-Map-Maker.exe . && docker rm tmp
