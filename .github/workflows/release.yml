@@ -28,11 +28,9 @@ jobs:
         id: tag
         run: |
           LATEST="${{ steps.latest.outputs.tag }}"
-          # Extract version parts
           VERSION="${LATEST#v}"
           IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
 
-          # Check commit messages for version bump hints
           COMMITS=$(git log "$LATEST"..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
 
           if echo "$COMMITS" | grep -iqE "^(feat|feature)(\(.+\))?!:|BREAKING CHANGE"; then
@@ -46,9 +44,7 @@ jobs:
           NEW_TAG="v${MAJOR}.${MINOR}.${PATCH}"
           echo "new_tag=$NEW_TAG" >> "$GITHUB_OUTPUT"
 
-          # Generate changelog from commits since last tag
           CHANGELOG=$(git log "$LATEST"..HEAD --pretty=format:"- %s" 2>/dev/null || git log --pretty=format:"- %s")
-          # Escape for GH output
           EOF=$(dd if=/dev/urandom bs=15 count=1 status=none | base64)
           echo "changelog<<$EOF" >> "$GITHUB_OUTPUT"
           echo "$CHANGELOG" >> "$GITHUB_OUTPUT"
@@ -61,21 +57,45 @@ jobs:
 
   build:
     needs: tag
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
 
-      - name: Build Windows exe
+      - name: Install dependencies
         run: |
-          mkdir -p dist
-          docker build -t zh-map-builder .
-          docker create --name zh-extract zh-map-builder true
-          docker cp zh-extract:/app/dist/ZH-Map-Maker.exe dist/ZH-Map-Maker.exe
-          docker rm zh-extract
-          ls -lh dist/ZH-Map-Maker.exe
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller anthropic
+          python -m pip install --no-deps .
+
+      - name: Build exe
+        run: |
+          python -m PyInstaller --onefile --windowed --name ZH-Map-Maker `
+            --hidden-import cnc_zh_map_maker `
+            --hidden-import cnc_zh_map_maker.map_file `
+            --hidden-import cnc_zh_map_maker.builder `
+            --hidden-import cnc_zh_map_maker.binary_io `
+            --hidden-import cnc_zh_map_maker.data_model `
+            --hidden-import cnc_zh_map_maker.refpack `
+            --hidden-import cnc_zh_map_maker.ai_generator `
+            --hidden-import cnc_zh_map_maker.installer `
+            --hidden-import cnc_zh_map_maker.gui `
+            --hidden-import anthropic `
+            --exclude-module numpy `
+            --exclude-module PIL `
+            --exclude-module Pillow `
+            --exclude-module matplotlib `
+            --exclude-module scipy `
+            --exclude-module pandas `
+            src/cnc_zh_map_maker/gui.py
+
+      - name: Verify exe
+        run: |
+          dir dist\ZH-Map-Maker.exe
 
       - name: Upload exe artifact
         uses: actions/upload-artifact@v4
