@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cnc-zh-map-maker"
+version = "0.1.0"
+description = "Command & Conquer: Generals Zero Hour map reader, writer, and generator"
+requires-python = ">=3.9"
+dependencies = [
+    "Pillow>=10.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov",
+]
+gui = [
+    "anthropic>=0.30",
+]
+build = [
+    "anthropic>=0.30",
+    "pyinstaller>=6.0",
+]
+
+[project.scripts]
+zh-map = "cnc_zh_map_maker.cli:main"
+zh-map-gui = "cnc_zh_map_maker.gui:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
