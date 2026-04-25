@@ -28,14 +28,16 @@ def build():
     src_dir = Path(__file__).parent / "src" / "cnc_zh_map_maker"
     main_script = src_dir / "gui.py"
 
+    # Path-separator for --add-data is OS-dependent (Windows uses ';', POSIX ':')
+    sep = ";" if sys.platform == "win32" else ":"
+
     cmd = [
         sys.executable, "-m", "PyInstaller",
         "--onefile",
         "--windowed",  # No console window
         "--name", "ZH-Map-Maker",
-        "--icon", "NONE",  # Add custom icon later if desired
-        # Include all source modules
-        "--add-data", f"{src_dir};cnc_zh_map_maker",
+        "--icon", "NONE",
+        "--add-data", f"{src_dir}{sep}cnc_zh_map_maker",
         # Hidden imports that PyInstaller might miss
         "--hidden-import", "cnc_zh_map_maker",
         "--hidden-import", "cnc_zh_map_maker.map_file",
@@ -45,9 +47,20 @@ def build():
         "--hidden-import", "cnc_zh_map_maker.refpack",
         "--hidden-import", "cnc_zh_map_maker.ai_generator",
         "--hidden-import", "cnc_zh_map_maker.installer",
+        "--hidden-import", "cnc_zh_map_maker.gui",
         "--hidden-import", "anthropic",
-        # Collect the anthropic package properly
         "--collect-all", "anthropic",
+        # Force-bundle Tcl/Tk runtime so the GUI actually launches on Windows.
+        # Without this, _tkinter.pyd loads but the tcl86t.dll / tk86t.dll plus
+        # the tcl/ and tk/ library folders are missing and import crashes at startup.
+        "--collect-all", "tkinter",
+        # Drop heavy deps PyInstaller pulls in transitively but the app doesn't use
+        "--exclude-module", "numpy",
+        "--exclude-module", "PIL",
+        "--exclude-module", "Pillow",
+        "--exclude-module", "matplotlib",
+        "--exclude-module", "scipy",
+        "--exclude-module", "pandas",
         str(main_script),
     ]
 
