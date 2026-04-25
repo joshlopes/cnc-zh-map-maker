@@ -381,36 +381,39 @@ def _write_map(map_file: MapFile) -> MapWriter:
     # Write string dictionary
     writer.write_string_dictionary()
 
-    # Write HeightMapData
+    # Open the implicit _MapRoot wrapper (asset_index 1). Every working ZH
+    # map nests its chunks inside this container — without it the engine
+    # rejects the file. The wrapper has no name in the dictionary; we write
+    # its header by hand with index=1, version=1.
+    writer.write_u32(1)              # _MapRoot asset index
+    writer.write_u16(1)              # _MapRoot version
+    root_size_pos = writer.stream.tell()
+    writer.write_u32(0)              # placeholder for size, patched at end
+
+    # Nested chunks (order matches what the engine emits)
     _write_height_map(writer, map_file.height_map)
-
-    # Write BlendTileData
     _write_blend_tile_data(writer, map_file.blend_tile_data, map_file.height_map)
-
-    # Write WorldInfo
     _write_world_info(writer, map_file.world_info)
-
-    # Write SidesList
     _write_sides_list(writer, map_file.sides)
-
-    # Write ObjectsList
     _write_objects_list(writer, map_file.objects)
-
-    # Write WaypointsList
     _write_waypoints_list(writer, map_file.waypoints)
-
-    # Write GlobalLighting
+    _write_player_scripts(writer, map_file.scripts)
     _write_global_lighting(writer, map_file.lighting)
-
-    # Write PolygonTriggers
     _write_polygon_triggers(writer, map_file.polygon_triggers)
 
-    # Write any raw sections we stored
+    # Any raw sections we round-tripped from a parse we don't fully understand
     for name, data in map_file._raw_sections.items():
         if name in writer.asset_names:
             size_pos = writer.begin_asset(name, 1)
             writer.write_bytes(data)
             writer.end_asset(size_pos)
+
+    # Patch _MapRoot size now that we know how much we've written
+    end_pos = writer.stream.tell()
+    root_data_size = end_pos - root_size_pos - 4
+    writer.stream.seek(root_size_pos)
+    writer.write_u32(root_data_size)
+    writer.stream.seek(end_pos)
 
     return writer
 
@@ -654,6 +657,27 @@ def _write_global_lighting(writer: MapWriter, gl: GlobalLighting) -> None:
     writer.write_u8(gl.shadow_color.r)
     writer.write_u8(gl.shadow_color.g)
     writer.write_u8(gl.shadow_color.b)
+
+    writer.end_asset(size_pos)
+
+
+def _write_player_scripts(writer: MapWriter, scripts) -> None:
+    """Write a minimal PlayerScriptsList chunk.
+
+    Real ZH skirmish maps always include this chunk. The engine uses it for
+    AI behaviour. An empty PlayerScriptsList (with one empty ScriptList per
+    player slot) is enough to satisfy the loader and let the default skirmish
+    AI take over for computer players. We write the simplest valid form:
+    the PlayerScriptsList chunk header followed by a single nested ScriptList
+    chunk with zero ScriptGroups.
+    """
+    size_pos = writer.begin_asset("PlayerScriptsList", 1)
+
+    # One nested ScriptList chunk — empty (0 script groups, 0 scripts)
+    sl_size_pos = writer.begin_asset("ScriptList", 1)
+    writer.write_u32(0)   # ScriptGroup count
+    writer.write_u32(0)   # Script count (top-level scripts directly in the list)
+    writer.end_asset(sl_size_pos)
 
     writer.end_asset(size_pos)
 
