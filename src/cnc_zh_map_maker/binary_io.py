@@ -188,7 +188,10 @@ class MapWriter:
     def __init__(self):
         self.stream = BytesIO()
         self.asset_names: dict[str, int] = {}
-        self._next_index = 1
+        # Index 1 is reserved for the implicit "_MapRoot" wrapper container
+        # that the SAGE engine expects to wrap every other chunk. Real maps
+        # register the first user asset name (HeightMapData) at index 2, not 1.
+        self._next_index = 2
 
     def register_asset_name(self, name: str) -> int:
         """Register an asset name and return its index."""
