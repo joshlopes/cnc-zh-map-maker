@@ -80,13 +80,36 @@ class MapReader:
         self.stream.seek(pos)
         return end - pos
 
-    def read_string_dictionary(self) -> None:
-        """Read the CkMp string dictionary at the start of the file.
+    def _read_7bit_int(self) -> int:
+        """Read .NET BinaryReader 7-bit-encoded length prefix.
 
-        Format: "CkMp" magic, then repeated entries of:
-          u32 index, u8 name_length, ASCII name_bytes
-        Indices count down. The dictionary ends when data no longer matches
-        this pattern (i.e., we've reached the first asset chunk).
+        Each byte contributes 7 bits; high bit set = continuation. For asset
+        names this is almost always a single byte (lengths < 128), but the
+        full encoding is supported for safety.
+        """
+        result = 0
+        shift = 0
+        for _ in range(5):
+            b = self.read_u8()
+            result |= (b & 0x7F) << shift
+            if (b & 0x80) == 0:
+                return result
+            shift += 7
+        raise ValueError("7-bit int too long (corrupt dictionary)")
+
+    def read_string_dictionary(self) -> None:
+        """Read the CkMp string dictionary.
+
+        Format (matching OpenSAGE's AssetNameCollection):
+            magic       = "CkMp" (4 bytes)
+            count       = u32 (number of entries)
+            for each entry (written in DESCENDING index order, count..1):
+                name    = .NET-style length-prefixed UTF-8 string
+                          (7-bit varint length, then the bytes)
+                index   = u32
+
+        Asset index 1 is just a regular dictionary entry — no implicit
+        "_MapRoot" wrapper exists.
         """
         magic = self.stream.read(4)
         if magic != b"CkMp":
@@ -95,43 +118,21 @@ class MapReader:
         self.asset_names.clear()
         self._name_to_index.clear()
 
-        while self.remaining() >= 5:  # At least u32 + u8
-            pos = self.tell()
-            index = self.read_u32()
+        count = self.read_u32()
+        if count > 10000:
+            raise ValueError(f"Dictionary count looks bogus ({count})")
 
-            # Sanity check - indices should be reasonable (< 1000)
-            if index > 1000:
-                self.seek(pos)
-                break
-
-            name_len = self.read_u8()
-            if name_len == 0 or name_len > 200:
-                self.seek(pos)
-                break
-
-            if self.remaining() < name_len:
-                self.seek(pos)
-                break
-
+        for _ in range(count):
+            name_len = self._read_7bit_int()
+            if name_len > 200:
+                raise ValueError(f"Asset name length too large: {name_len}")
             try:
-                name = self.stream.read(name_len).decode("ascii")
-            except UnicodeDecodeError:
-                self.seek(pos)
-                break
-
-            # Validate it looks like a name (alphanumeric + underscore)
-            if not all(c.isalnum() or c in "_" for c in name):
-                self.seek(pos)
-                break
-
+                name = self.stream.read(name_len).decode("utf-8")
+            except UnicodeDecodeError as e:
+                raise ValueError(f"Bad asset name encoding: {e}")
+            index = self.read_u32()
             self.asset_names[index] = name
             self._name_to_index[name] = index
-
-        # Index 1 is the root container asset in SAGE format.
-        # It's not stored in the dictionary but is used as the first asset chunk index.
-        if 1 not in self.asset_names:
-            self.asset_names[1] = "_MapRoot"
-            self._name_to_index["_MapRoot"] = 1
 
     def read_asset_header(self) -> AssetHeader | None:
         """Read the next asset chunk header."""
@@ -188,10 +189,10 @@ class MapWriter:
     def __init__(self):
         self.stream = BytesIO()
         self.asset_names: dict[str, int] = {}
-        # Index 1 is reserved for the implicit "_MapRoot" wrapper container
-        # that the SAGE engine expects to wrap every other chunk. Real maps
-        # register the first user asset name (HeightMapData) at index 2, not 1.
-        self._next_index = 2
+        # Indices start at 1 — there is no reserved "_MapRoot" slot. Asset
+        # chunks are written flat (no wrapping container); the dictionary is
+        # the only thing identifying who owns which index.
+        self._next_index = 1
 
     def register_asset_name(self, name: str) -> int:
         """Register an asset name and return its index."""
@@ -228,16 +229,35 @@ class MapWriter:
         self.write_u16(len(s))
         self.stream.write(encoded)
 
+    def _write_7bit_int(self, value: int) -> None:
+        """Write a .NET BinaryWriter 7-bit-encoded length prefix."""
+        if value < 0:
+            raise ValueError("7-bit int cannot be negative")
+        while value >= 0x80:
+            self.write_u8((value & 0x7F) | 0x80)
+            value >>= 7
+        self.write_u8(value & 0x7F)
+
     def write_string_dictionary(self) -> None:
-        """Write the CkMp magic and string dictionary."""
+        """Write the CkMp string dictionary.
+
+        Format (matching OpenSAGE's AssetNameCollection):
+            magic       = "CkMp"
+            count       = u32
+            for each entry, in DESCENDING index order:
+                name    = .NET 7-bit-prefixed UTF-8 string
+                index   = u32
+        """
         self.stream.write(b"CkMp")
-        # Write entries sorted by index descending (as per format convention)
+        self.write_u32(len(self.asset_names))
+
+        # Descending by index — highest first. Index 1 is the LAST entry.
         entries = sorted(self.asset_names.items(), key=lambda x: x[1], reverse=True)
         for name, index in entries:
-            self.write_u32(index)
-            encoded = name.encode("ascii")
-            self.write_u8(len(encoded))
+            encoded = name.encode("utf-8")
+            self._write_7bit_int(len(encoded))
             self.stream.write(encoded)
+            self.write_u32(index)
 
     def begin_asset(self, name: str, version: int) -> int:
         """Begin writing an asset chunk. Returns position of data_size field."""

@@ -378,28 +378,22 @@ def _write_map(map_file: MapFile) -> MapWriter:
         if obj.owner:
             writer.register_asset_name(obj.owner)
 
-    # Write string dictionary
+    # Write string dictionary (CkMp magic + count + entries)
     writer.write_string_dictionary()
 
-    # Open the implicit _MapRoot wrapper (asset_index 1). Every working ZH
-    # map nests its chunks inside this container — without it the engine
-    # rejects the file. The wrapper has no name in the dictionary; we write
-    # its header by hand with index=1, version=1.
-    writer.write_u32(1)              # _MapRoot asset index
-    writer.write_u16(1)              # _MapRoot version
-    root_size_pos = writer.stream.tell()
-    writer.write_u32(0)              # placeholder for size, patched at end
-
-    # Nested chunks (order matches what the engine emits)
+    # Asset chunks — written flat, no wrapping container. Order roughly
+    # mirrors what OpenSAGE writes for ZH maps. Each chunk's asset_index
+    # comes from the dictionary; whichever name was registered FIRST
+    # (HeightMapData here) gets index 1 and appears first.
     _write_height_map(writer, map_file.height_map)
     _write_blend_tile_data(writer, map_file.blend_tile_data, map_file.height_map)
     _write_world_info(writer, map_file.world_info)
     _write_sides_list(writer, map_file.sides)
     _write_objects_list(writer, map_file.objects)
-    _write_waypoints_list(writer, map_file.waypoints)
     _write_player_scripts(writer, map_file.scripts)
-    _write_global_lighting(writer, map_file.lighting)
     _write_polygon_triggers(writer, map_file.polygon_triggers)
+    _write_global_lighting(writer, map_file.lighting)
+    _write_waypoints_list(writer, map_file.waypoints)
 
     # Any raw sections we round-tripped from a parse we don't fully understand
     for name, data in map_file._raw_sections.items():
@@ -407,13 +401,6 @@ def _write_map(map_file: MapFile) -> MapWriter:
             size_pos = writer.begin_asset(name, 1)
             writer.write_bytes(data)
             writer.end_asset(size_pos)
-
-    # Patch _MapRoot size now that we know how much we've written
-    end_pos = writer.stream.tell()
-    root_data_size = end_pos - root_size_pos - 4
-    writer.stream.seek(root_size_pos)
-    writer.write_u32(root_data_size)
-    writer.stream.seek(end_pos)
 
     return writer
 
