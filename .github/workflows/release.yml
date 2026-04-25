@@ -73,25 +73,7 @@ jobs:
           python -m pip install --no-deps .
 
       - name: Build exe
-        run: |
-          python -m PyInstaller --onefile --windowed --name ZH-Map-Maker `
-            --hidden-import cnc_zh_map_maker `
-            --hidden-import cnc_zh_map_maker.map_file `
-            --hidden-import cnc_zh_map_maker.builder `
-            --hidden-import cnc_zh_map_maker.binary_io `
-            --hidden-import cnc_zh_map_maker.data_model `
-            --hidden-import cnc_zh_map_maker.refpack `
-            --hidden-import cnc_zh_map_maker.ai_generator `
-            --hidden-import cnc_zh_map_maker.installer `
-            --hidden-import cnc_zh_map_maker.gui `
-            --hidden-import anthropic `
-            --exclude-module numpy `
-            --exclude-module PIL `
-            --exclude-module Pillow `
-            --exclude-module matplotlib `
-            --exclude-module scipy `
-            --exclude-module pandas `
-            src/cnc_zh_map_maker/gui.py
+        run: python build_exe.py
 
       - name: Verify exe
         run: |
